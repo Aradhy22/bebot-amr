@@ -1,0 +1,247 @@
+<?xml version="1.0"?>
+<robot name="bebot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Include base robot description -->
+  <xacro:include filename="$(find bebot_description)/urdf/bebot.urdf.xacro"/>
+
+  <!-- Gazebo-specific properties and plugins -->
+
+  <!-- Differential drive plugin for skid-steer -->
+  <gazebo>
+    <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
+      <left_joint>front_left_wheel_joint</left_joint>
+      <left_joint>rear_left_wheel_joint</left_joint>
+      <right_joint>front_right_wheel_joint</right_joint>
+      <right_joint>rear_right_wheel_joint</right_joint>
+      <wheel_separation>0.40</wheel_separation>
+      <wheel_radius>0.0475</wheel_radius>
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <topic>cmd_vel</topic>
+      <odom_topic>odom</odom_topic>
+      <tf_topic>tf</tf_topic>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_footprint</child_frame_id>
+    </plugin>
+  </gazebo>
+
+  <!-- Publishes /joint_states so robot_state_publisher can compute the
+       wheel link transforms (the wheel joints are continuous, not fixed). -->
+  <gazebo>
+    <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
+      <topic>joint_states</topic>
+      <update_rate>30</update_rate>
+    </plugin>
+  </gazebo>
+
+  <!-- 3D lidar sensor plugin, modeled on the Ouster OS1-32:
+         - 32 channels over a 45 deg (+/-22.5 deg) vertical FOV
+         - 1024 points/rotation horizontal resolution, full 360 deg
+         - 10 Hz rotation/update rate
+         - 0.3 m min range, 120 m max range (datasheet ceiling at high
+           reflectivity; actual returns are limited by scene geometry)
+         - Gaussian range noise at 2 cm stddev, the midpoint of the
+           datasheet's +/-1.5-3 cm range accuracy spec
+       Real OS1 beam altitudes are non-uniformly spaced (denser near the
+       horizon); SDF's vertical scan only supports uniform spacing, so this
+       is an approximation. -->
+  <gazebo reference="laser_link">
+    <sensor name="lidar" type="gpu_lidar">
+      <pose>0 0 0 0 0 0</pose>
+      <topic>lidar</topic>
+      <update_rate>10</update_rate>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>1024</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+          <vertical>
+            <samples>32</samples>
+            <resolution>1</resolution>
+            <min_angle>-0.392699</min_angle>
+            <max_angle>0.392699</max_angle>
+          </vertical>
+        </scan>
+        <range>
+          <min>0.3</min>
+          <max>120.0</max>
+          <resolution>0.003</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.02</stddev>
+        </noise>
+      </lidar>
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+    </sensor>
+  </gazebo>
+
+  <!-- IMU sensor plugin -->
+  <gazebo reference="imu_link">
+    <sensor name="imu_sensor" type="imu">
+      <pose>0 0 0 0 0 0</pose>
+      <topic>imu</topic>
+      <update_rate>100</update_rate>
+      <always_on>true</always_on>
+      <imu>
+        <angular_velocity>
+          <x>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.009</stddev>
+            </noise>
+          </x>
+          <y>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.009</stddev>
+            </noise>
+          </y>
+          <z>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.009</stddev>
+            </noise>
+          </z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.017</stddev>
+            </noise>
+          </x>
+          <y>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.017</stddev>
+            </noise>
+          </y>
+          <z>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.017</stddev>
+            </noise>
+          </z>
+        </linear_acceleration>
+      </imu>
+    </sensor>
+  </gazebo>
+
+  <!-- RealSense D435i, simulated as an aligned RGBD camera (color + depth +
+       point cloud from one sensor, same as the real camera's ROS driver
+       output). Approximated from the D435i datasheet:
+         - Depth FOV: 87 x 58 deg (H x V) - used as the sensor's FOV since
+           gz-sim's rgbd_camera shares one lens model for both streams,
+           and depth is the stream navigation/perception code cares about
+           more than exact color framing.
+         - Depth range: 0.105 m to 10 m (best accuracy only out to ~3 m on
+           the real unit - noise below is not modeled per-range, so treat
+           returns near the far end as more optimistic than reality).
+         - 640x480 (D435i also does 1280x720; 640x480 chosen for lower sim
+           rendering/bridge load, matching the coarser-for-performance
+           choices made elsewhere in this stack, e.g. FAST-LIO's map
+           resolution).
+       gz-sim cameras look along their own local +X by default (unlike the
+       ROS optical convention of Z-forward) - camera_link's +X is already
+       the robot's forward direction (identity joint to base_link), so the
+       sensor needs no extra rotation to look forward. An earlier version
+       of this applied a -90/-90 rpy here on the mistaken assumption that
+       the REP-103-to-optical-frame rotation belongs on the sensor pose
+       itself; it doesn't (it only applies to how a separate optical child
+       link's TF is oriented, if one is added later for strict REP-103
+       compliance) - applying it to the pose instead rotated the actual
+       render direction, which is why the image was pointing left. -->
+  <gazebo reference="camera_link">
+    <sensor name="d435i" type="rgbd_camera">
+      <pose>0 0 0 0 0 0</pose>
+      <topic>camera</topic>
+      <update_rate>30</update_rate>
+      <camera>
+        <horizontal_fov>1.518</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.105</near>
+          <far>10.0</far>
+        </clip>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.007</stddev>
+        </noise>
+      </camera>
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+    </sensor>
+  </gazebo>
+
+  <!-- Material colors for Gazebo -->
+  <gazebo reference="base_link">
+    <material>Gazebo/Grey</material>
+  </gazebo>
+
+  <gazebo reference="camera_link">
+    <material>Gazebo/DarkGrey</material>
+  </gazebo>
+
+  <gazebo reference="rear_box_link">
+    <material>Gazebo/Blue</material>
+  </gazebo>
+
+  <gazebo reference="laser_link">
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <!-- Directional friction: full grip fore-aft (mu1, along fdir1 = local X,
+       the rolling direction) so the robot doesn't lose forward traction, but
+       near-zero friction laterally (mu2) so the wheels can freely skid
+       sideways during a turn. A uniformly *reduced* (but nonzero) friction
+       coefficient on all axes was tried first and made no difference at low
+       commanded turn rates - DART's contact solver was treating "small but
+       nonzero lateral friction" as a valid resting (locked) solution
+       regardless of magnitude, only breaking free above a few rad/s. Mu2
+       needs to be low enough to avoid that resting-state, matching gz-sim's
+       own skid-steer/mecanum reference (skid_steer_mecanum.sdf, mu1=1/mu2=0),
+       but an *exact* zero means any lateral velocity picked up mid-turn has
+       nothing to damp it and the chassis slides indefinitely even after
+       cmd_vel goes to zero. 0.05 is low enough to still turn freely at
+       realistic teleop speeds while giving lateral drift something to decay
+       against. -->
+
+  <gazebo reference="front_left_wheel_link">
+    <material>Gazebo/Black</material>
+    <mu1>0.8</mu1>
+    <mu2>0.05</mu2>
+    <fdir1>1 0 0</fdir1>
+  </gazebo>
+
+  <gazebo reference="front_right_wheel_link">
+    <material>Gazebo/Black</material>
+    <mu1>0.8</mu1>
+    <mu2>0.05</mu2>
+    <fdir1>1 0 0</fdir1>
+  </gazebo>
+
+  <gazebo reference="rear_left_wheel_link">
+    <material>Gazebo/Black</material>
+    <mu1>0.8</mu1>
+    <mu2>0.05</mu2>
+    <fdir1>1 0 0</fdir1>
+  </gazebo>
+
+  <gazebo reference="rear_right_wheel_link">
+    <material>Gazebo/Black</material>
+    <mu1>0.8</mu1>
+    <mu2>0.05</mu2>
+    <fdir1>1 0 0</fdir1>
+  </gazebo>
+
+</robot>

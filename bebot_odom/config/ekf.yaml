@@ -1,0 +1,58 @@
+ekf_filter_node:
+  ros__parameters:
+    use_sim_time: true
+    frequency: 50.0
+    two_d_mode: true
+    publish_tf: true
+    publish_acceleration: false
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_footprint
+    world_frame: odom
+
+    # Wheel encoder odometry (gz DiffDrive plugin): fuse velocity only, not
+    # position - position is left to the filter's own integration so it
+    # isn't just a copy of the (drift-prone) wheel-odometry position.
+    odom0: odom
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  false, false,
+                   false, false, true,
+                   false, false, false]
+    odom0_differential: false
+    odom0_relative: false
+    odom0_queue_size: 10
+
+    # IMU: fuse angular velocity only, not orientation and not linear
+    # acceleration. In simulation the IMU's orientation field is populated
+    # from ground truth (no magnetometer is modeled), which would give an
+    # unrealistically perfect yaw that a real bare IMU on the Jetson can't
+    # provide - a real gyro/accel-only IMU can't sense absolute yaw at all,
+    # only its rate. Letting the filter integrate yaw from angular velocity
+    # instead keeps this config valid when the real Ouster/IMU hardware
+    # replaces the sim.
+    # ax/ay/az are NOT fused (previously true - this was a real bug):
+    # fusing raw linear acceleration means the filter double-integrates it
+    # (accel -> velocity -> position), and any small constant bias grows
+    # QUADRATICALLY with time. Measured: with accel fused, the filter's
+    # /odometry/filtered diverged from the true (wheel-odometry-matching)
+    # position by tens of meters within about 5 minutes of runtime, while
+    # raw /odom stayed correct throughout - textbook accelerometer-bias
+    # runaway, not a "long session" issue. Wheel odometry already supplies
+    # a stable, non-integrating vx; there's no good reason to also fuse
+    # noisy double-integrated accelerometer data on top of it for a ground
+    # robot.
+    imu0: imu
+    imu0_config: [false, false, false,
+                  false, false, false,
+                  false, false, false,
+                  true,  true,  true,
+                  false, false, false]
+    imu0_differential: false
+    imu0_relative: false
+    imu0_queue_size: 10
+    # No longer meaningful now that ax/ay/az aren't fused - left false so
+    # it's a documented no-op rather than a stale "true" implying something
+    # it no longer does.
+    imu0_remove_gravitational_acceleration: false

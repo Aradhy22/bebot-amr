@@ -1,0 +1,24 @@
+serial_odometry_node:
+  ros__parameters:
+    serial_port: "/dev/ttyACM0"
+    baud_rate: 57600
+
+    # Must match bebot_description/urdf/bebot.urdf.xacro wheel_radius / track_width
+    wheel_radius: 0.0475
+    wheel_separation: 0.40
+
+    # Quadrature encoder ticks per one full wheel revolution (after gearbox).
+    # Update to match the actual rear motor/encoder/gearbox combo.
+    ticks_per_rev: 960
+
+    # Open-loop mapping from cmd_vel wheel speed (m/s) to Arduino PWM (-max_pwm..max_pwm).
+    # max_linear_speed should be the wheel speed the robot achieves at max_pwm.
+    max_linear_speed: 0.5
+    max_pwm: 255
+
+    cmd_timer_hz: 20.0
+    serial_poll_hz: 50.0
+
+    odom_frame_id: "odom"
+    base_frame_id: "base_link"
+    publish_tf: true

@@ -1,0 +1,96 @@
+/**:
+    ros__parameters:
+        feature_extract_enable: false
+        # Measured: with the previous settings, /Odometry averaged ~6.85Hz
+        # against the true 10Hz scan rate (CPU pinned ~90%), gaps up to
+        # 0.93s between processed scans. cube_side_length is 1000m - far
+        # bigger than the ~20m warehouse - so FAST-LIO's local-map pruning
+        # never triggers here; the whole room's points persist and per-scan
+        # ikd-tree cost grows with total explored area, not a bug to prune
+        # away. The actual fix is cutting per-scan compute so processing
+        # keeps up with the 10Hz input: fewer points/scan, coarser map
+        # voxels, fewer iEKF iterations. When FAST-LIO falls behind, queued
+        # or dropped scans widen the gap the IMU has to propagate through
+        # with no lidar correction - harmless during slow translation, but
+        # rotation is the motion most sensitive to that gap, which is why
+        # the map only visibly distorts on turns after enough map has
+        # accumulated to push processing past the real-time budget.
+        point_filter_num: 6         # was 4: skip more raw points per scan
+        max_iteration: 2            # was 3: fewer iEKF iterations/scan
+        filter_size_surf: 0.4       # was 0.3: coarser downsample
+        filter_size_map: 0.4
+        cube_side_length: 1000.0
+        runtime_pos_log_enable: false
+        map_file_path: "./bebot_map.pcd"
+
+        common:
+            lid_topic:  "/lidar/points"
+            imu_topic:  "/imu"
+            time_sync_en: false
+            time_offset_lidar_to_imu: 0.0
+
+        preprocess:
+            # lidar_type 3 = "ouster" handler, which expects the real Ouster
+            # driver's per-point "t" (time-since-scan-start) field. gz-sim's
+            # simulated point cloud doesn't produce that field, so this uses
+            # an out-of-range value (any value other than 1/2/3/4) to fall
+            # through to FAST-LIO's generic XYZI handler instead, which
+            # treats each scan as captured instantaneously (curvature/time =
+            # 0 for every point - no per-point motion deskew). Switch this to
+            # 3 when moving to the real Ouster OS1, whose driver does provide
+            # a per-point time field.
+            lidar_type: 5
+            scan_line: 32
+            timestamp_unit: 3          # 0-second, 1-millisecond, 2-microsecond, 3-nanosecond
+            blind: 0.3                 # matches the OS1's minimum range
+
+        mapping:
+            # The simulated IMU (bebot_gazebo.urdf.xacro) is quite clean:
+            # gyro noise stddev 0.009 rad/s (var ~8e-5), accel 0.017 m/s^2
+            # (var ~3e-4). Stock FAST-LIO default is 0.1 for both - ~1000x
+            # looser than the real noise, which made the iEKF under-trust
+            # IMU propagation between lidar scans (visible as the point
+            # cloud lagging/wobbling relative to the chassis mid-turn).
+            # Tightening all the way to the true variance (0.001/0.003) was
+            # tried and caused outright divergence on startup: right after
+            # spawn the chassis has a brief physical settling
+            # transient (drop height 0.1m -> contact impulse) that isn't
+            # sensor noise but IS a real, brief high-acceleration event; an
+            # over-tight covariance made the filter trust that transient
+            # too much before scan-to-map registration had enough of a
+            # local map to correct it, and the estimate ran away (position
+            # reaching hundreds/thousands of meters within seconds, loop
+            # closure logging hundreds of spurious keyframes with
+            # degenerate near-identical match stats). This is a middle
+            # ground: tighter than stock (still meaningfully improves
+            # rotation tracking) but with enough margin to absorb a startup
+            # transient without diverging.
+            acc_cov: 0.03
+            gyr_cov: 0.01
+            b_acc_cov: 0.0001
+            b_gyr_cov: 0.0001
+            fov_degree: 360.0
+            det_range: 120.0           # matches the OS1's max range
+            extrinsic_est_en: false
+            # laser_link and imu_link are co-located (identity joint) in the
+            # bebot URDF, so lidar-wrt-IMU is the identity transform.
+            extrinsic_T: [ 0.0, 0.0, 0.0 ]
+            extrinsic_R: [1., 0., 0.,
+                          0., 1., 0.,
+                          0., 0., 1.]
+
+        publish:
+            path_en: true
+            scan_publish_en: true
+            dense_publish_en: true
+            scan_bodyframe_pub_en: true
+            # Required for map saving to work at all: this fills the
+            # accumulated point-cloud buffer that the /map_save service
+            # writes to disk. Ctrl+C does NOT save a map in this ROS2 port
+            # (the shutdown-autosave code path is dead/commented-out
+            # upstream) - call the /map_save service instead.
+            map_en: true
+
+        pcd_save:
+            pcd_save_en: true
+            interval: -1

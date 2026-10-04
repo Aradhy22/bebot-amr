@@ -1,0 +1,22 @@
+# Third-party dependency, cloned separately per the README (not part of this repo)
+FAST_LIO/
+
+# Python
+__pycache__/
+*.pyc
+
+# colcon / ament build artifacts (these live one level up from this repo
+# root in a real workspace: <ws>/build, <ws>/install, <ws>/log)
+build/
+install/
+log/
+
+# Editor / OS cruft
+.vscode/
+*.swp
+.DS_Store
+
+# Arduino IDE2 sketch build cache (not part of the firmware source)
+*.ino.bin
+*.ino.elf
+*.ino.map

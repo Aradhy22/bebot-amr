@@ -1,0 +1,254 @@
+<?xml version="1.0"?>
+<robot name="bebot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ==================== Robot dimension parameters ==================== -->
+  <!-- Adjust these to match the real chassis. All units in meters / kg.     -->
+  <xacro:property name="chassis_length" value="0.54"/>
+  <xacro:property name="chassis_width"  value="0.36"/>
+  <xacro:property name="chassis_height" value="0.12"/>
+  <xacro:property name="chassis_mass"   value="5.0"/>
+
+  <xacro:property name="wheel_radius"   value="0.0475"/>
+  <xacro:property name="wheel_width"    value="0.04"/>
+  <xacro:property name="wheel_mass"     value="0.3"/>
+
+  <!-- distance from robot center to the wheel plane on each side -->
+  <xacro:property name="track_width"    value="0.40"/>
+  <!-- distance from robot center to front/rear axle -->
+  <xacro:property name="wheelbase"      value="0.225"/>
+
+  <!-- ground clearance so the chassis floats above the wheel centers -->
+  <xacro:property name="chassis_z_off"  value="${wheel_radius + 0.01}"/>
+
+  <material name="chassis_grey">
+    <color rgba="0.3 0.3 0.3 1.0"/>
+  </material>
+  <material name="wheel_black">
+    <color rgba="0.05 0.05 0.05 1.0"/>
+  </material>
+
+  <!-- ==================== base_link / base_footprint ==================== -->
+  <link name="base_footprint"/>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+      <material name="chassis_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${chassis_mass}"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia
+        ixx="${(1/12) * chassis_mass * (chassis_width*chassis_width + chassis_height*chassis_height)}" ixy="0" ixz="0"
+        iyy="${(1/12) * chassis_mass * (chassis_length*chassis_length + chassis_height*chassis_height)}" iyz="0"
+        izz="${(1/12) * chassis_mass * (chassis_length*chassis_length + chassis_width*chassis_width)}"/>
+    </inertial>
+  </link>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${chassis_z_off}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ==================== wheel macro ==================== -->
+  <!-- prefix: front_left | front_right | rear_left | rear_right
+       x_off: +wheelbase (front) or -wheelbase (rear)
+       y_off: +track_width/2 (left) or -track_width/2 (right)
+       Collision uses a sphere rather than the visual's cylinder: a cylinder
+       contacts a flat ground plane along its rim edge (two contact points
+       spanning the wheel width), which mechanically resists chassis yaw
+       during skid-steer turns almost regardless of friction. A sphere gives
+       a single contact point per wheel, matching gz-sim's own skid-steer
+       reference (diff_drive_skid.sdf) so the wheels can actually skid. -->
+  <xacro:macro name="wheel" params="prefix x_off y_off">
+    <link name="${prefix}_wheel_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <material name="wheel_black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <sphere radius="${wheel_radius}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="${wheel_mass}"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <inertia
+          ixx="${(1/12) * wheel_mass * (3*wheel_radius*wheel_radius + wheel_width*wheel_width)}" ixy="0" ixz="0"
+          iyy="${(1/12) * wheel_mass * (3*wheel_radius*wheel_radius + wheel_width*wheel_width)}" iyz="0"
+          izz="${0.5 * wheel_mass * wheel_radius * wheel_radius}"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${prefix}_wheel_link"/>
+      <origin xyz="${x_off} ${y_off} ${-chassis_z_off}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.1" friction="0.1"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- ==================== four skid-steer wheels ==================== -->
+  <!-- Only the rear wheels carry quadrature encoders in hardware, but all
+       four are simulated the same way kinematically (skid steer). -->
+  <xacro:wheel prefix="front_left"  x_off="${wheelbase}"  y_off="${track_width/2}"/>
+  <xacro:wheel prefix="front_right" x_off="${wheelbase}"  y_off="${-track_width/2}"/>
+  <xacro:wheel prefix="rear_left"   x_off="${-wheelbase}" y_off="${track_width/2}"/>
+  <xacro:wheel prefix="rear_right"  x_off="${-wheelbase}" y_off="${-track_width/2}"/>
+
+  <!-- ==================== sensors ==================== -->
+
+  <!-- ==================== rear electronics box ==================== -->
+  <xacro:property name="box_length" value="0.15"/>
+  <xacro:property name="box_width"  value="0.16"/>
+  <xacro:property name="box_height" value="0.20"/>
+  <xacro:property name="box_mass"   value="0.5"/>
+
+  <material name="box_blue">
+    <color rgba="0.1 0.3 0.6 1.0"/>
+  </material>
+
+  <link name="rear_box_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${box_length} ${box_width} ${box_height}"/>
+      </geometry>
+      <material name="box_blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${box_length} ${box_width} ${box_height}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${box_mass}"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia
+        ixx="${(1/12) * box_mass * (box_width*box_width + box_height*box_height)}" ixy="0" ixz="0"
+        iyy="${(1/12) * box_mass * (box_length*box_length + box_height*box_height)}" iyz="0"
+        izz="${(1/12) * box_mass * (box_length*box_length + box_width*box_width)}"/>
+    </inertial>
+  </link>
+
+  <joint name="rear_box_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="rear_box_link"/>
+    <origin xyz="${-chassis_length/2 + box_length/2} 0 ${chassis_height/2 + box_height/2}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ==================== lidar ==================== -->
+  <xacro:property name="lidar_radius" value="0.035"/>
+  <xacro:property name="lidar_height" value="0.04"/>
+  <xacro:property name="lidar_mass"   value="0.2"/>
+
+  <material name="lidar_black">
+    <color rgba="0.1 0.1 0.1 1.0"/>
+  </material>
+
+  <link name="laser_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${lidar_radius}" length="${lidar_height}"/>
+      </geometry>
+      <material name="lidar_black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${lidar_radius}" length="${lidar_height}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${lidar_mass}"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia
+        ixx="${(1/12) * lidar_mass * (3*lidar_radius*lidar_radius + lidar_height*lidar_height)}" ixy="0" ixz="0"
+        iyy="${(1/12) * lidar_mass * (3*lidar_radius*lidar_radius + lidar_height*lidar_height)}" iyz="0"
+        izz="${0.5 * lidar_mass * lidar_radius * lidar_radius}"/>
+    </inertial>
+  </link>
+
+  <joint name="laser_joint" type="fixed">
+    <parent link="rear_box_link"/>
+    <child link="laser_link"/>
+    <origin xyz="0 0 ${box_height/2 + lidar_height/2}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- IMU mounted at same location as lidar -->
+  <link name="imu_link"/>
+  <joint name="imu_joint" type="fixed">
+    <parent link="laser_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ==================== front camera (RealSense D435i) ==================== -->
+  <!-- D435i module footprint is approx 90 x 25 x 25 mm. Mounted on the
+       front face of the chassis, centered in Y, at chassis mid-height -
+       a simple forward-facing bumper mount. Move this up/forward via
+       camera_x_off/camera_z_off if the real mount ends up on a mast
+       instead. Frame follows REP-103 (X forward, Y left, Z up); the
+       optical-frame rotation needed for image/depth output is applied on
+       the Gazebo sensor's own <pose> in bebot_gazebo.urdf.xacro rather than
+       via a second link here, matching ros_gz_sim's own camera examples. -->
+  <xacro:property name="camera_length" value="0.025"/>
+  <xacro:property name="camera_width"  value="0.09"/>
+  <xacro:property name="camera_height" value="0.025"/>
+  <xacro:property name="camera_mass"   value="0.072"/> <!-- D435i datasheet weight -->
+  <xacro:property name="camera_x_off"  value="${chassis_length/2 + camera_length/2}"/>
+  <xacro:property name="camera_z_off"  value="0"/> <!-- chassis mid-height -->
+
+  <material name="camera_dark_grey">
+    <color rgba="0.15 0.15 0.15 1.0"/>
+  </material>
+
+  <link name="camera_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${camera_length} ${camera_width} ${camera_height}"/>
+      </geometry>
+      <material name="camera_dark_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${camera_length} ${camera_width} ${camera_height}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${camera_mass}"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia
+        ixx="${(1/12) * camera_mass * (camera_width*camera_width + camera_height*camera_height)}" ixy="0" ixz="0"
+        iyy="${(1/12) * camera_mass * (camera_length*camera_length + camera_height*camera_height)}" iyz="0"
+        izz="${(1/12) * camera_mass * (camera_length*camera_length + camera_width*camera_width)}"/>
+    </inertial>
+  </link>
+
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="${camera_x_off} 0 ${camera_z_off}" rpy="0 0 0"/>
+  </joint>
+
+</robot>
