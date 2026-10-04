@@ -12,7 +12,7 @@ A full-stack autonomous mobile robot (AMR) software stack for **bebot**, a custo
 </p>
 
 <p align="center">
-  <a href="media/Untitled design.mp4"><img src="media/bebot-scan-poster.jpg" alt="Live 3D lidar scan demo — click to play" width="640"></a>
+  <a href="media/bebot-lidar-demo.mp4"><img src="media/bebot-lidar-demo-poster.jpg" alt="Live 3D lidar scan demo — click to play" width="640"></a>
   <br><sub>🎥 Live 3D lidar scan (click the image to play the video)</sub>
 </p>
 
